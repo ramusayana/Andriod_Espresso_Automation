@@ -1,8 +1,8 @@
 // Jenkinsfile
 
 pipeline {
-    // 1. Agent: Defines where the build runs. 'android-ci' should be a Jenkins agent with Android SDK installed.
-    agent { label 'android-ci' }
+    // 1. Agent: Defines where the build runs. 'agent any' should be a Jenkins agent with Android SDK installed.
+    agent { label 'agent any' }
 
     environment {
         // Assumes ANDROID_HOME is set in Jenkins global configuration.
