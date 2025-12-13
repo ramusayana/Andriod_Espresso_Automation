@@ -1,0 +1,93 @@
+// Jenkinsfile
+
+pipeline {
+    // 1. Agent: Defines where the build runs. 'android-ci' should be a Jenkins agent with Android SDK installed.
+    agent { label 'android-ci' }
+
+    environment {
+        // Assumes ANDROID_HOME is set in Jenkins global configuration.
+        // Update PATH to include Android SDK tools for easier access in shell commands.
+        PATH = "${env.ANDROID_HOME}/cmdline-tools/latest/bin:${env.ANDROID_HOME}/emulator:${env.ANDROID_HOME}/platform-tools:${env.PATH}"
+
+        GRADLE_WRAPPER   = './gradlew'
+        AVD_NAME         = 'ci_test_avd'
+        PLATFORM_VERSION = 'android-30' // Target Android API Level for the emulator
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                // Fetches the source code from the configured SCM (e.g., Git)
+                checkout scm
+            }
+        }
+
+        stage('Clean Workspace') {
+            steps {
+                // Grant execute permissions to gradlew and run the clean task.
+                sh "chmod +x ${GRADLE_WRAPPER}"
+                sh "${GRADLE_WRAPPER} clean"
+            }
+        }
+
+        stage('Start Android Emulator') {
+            steps {
+                script {
+                    echo "Creating Android Virtual Device (AVD)..."
+                    // Create a new AVD, overwriting if it already exists.
+                    // Using google_apis for access to Google Play Services, and x86_64 for better performance on CI servers.
+                    sh "echo no | avdmanager create avd --name '${AVD_NAME}' --package 'system-images;${PLATFORM_VERSION};google_apis;x86_64' --force"
+
+                    echo "Starting emulator..."
+                    // Start the emulator in the background without a UI, audio, or boot animation for faster startup.
+                    sh "nohup emulator -avd ${AVD_NAME} -no-window -no-audio -no-boot-anim -port 5554 &"
+
+                    // Wait for the Android Debug Bridge (ADB) to see the device.
+                    sh "adb wait-for-device"
+                    echo "Emulator is online. Waiting for boot process to complete..."
+
+                    // Wait until the system boot has completed.
+                    sh "adb shell 'while [[ -z \$(getprop sys.boot_completed) ]]; do sleep 5; done'"
+
+                    // Unlock the screen to ensure UI is accessible for tests.
+                    sh "adb shell input keyevent 82"
+                    
+                    echo "Emulator is ready."
+                }
+            }
+        }
+
+        stage('Run Espresso Tests') {
+            steps {
+                // Execute instrumentation tests on the connected emulator.
+                // --no-daemon is recommended for CI environments.
+                sh "${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
+            }
+        }
+    }
+
+    // Post-build actions are executed after all stages have completed.
+    post {
+        always {
+            script {
+                echo "Publishing JUnit test results..."
+                // Collect and publish test results. This enables Jenkins to track test history and display reports.
+                junit 'app/build/outputs/androidTest-results/connected/**/*.xml'
+
+                echo "Archiving build artifacts..."
+                // Archive the HTML test report and the generated APK for later inspection.
+                archiveArtifacts artifacts: 'app/build/reports/androidTests/connected/index.html, app/build/outputs/apk/debug/*.apk', allowEmptyArchive: true
+
+                echo "Shutting down emulator..."
+                // Ensure the emulator is killed to free up resources on the agent.
+                sh "adb emu kill || true"
+            }
+        }
+        success {
+            echo "Pipeline completed successfully."
+        }
+        failure {
+            echo "Pipeline failed. Please review the logs and test reports."
+        }
+    }
+}
