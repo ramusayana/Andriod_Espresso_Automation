@@ -24,9 +24,8 @@ pipeline {
 
         stage('Clean Workspace') {
             steps {
-                // Grant execute permissions to gradlew and run the clean task.
-                sh "chmod +x ${GRADLE_WRAPPER}"
-                sh "${GRADLE_WRAPPER} clean"
+                // The chmod command is not necessary on Windows.
+                bat "${GRADLE_WRAPPER} clean"
             }
         }
 
@@ -36,21 +35,22 @@ pipeline {
                     echo "Creating Android Virtual Device (AVD)..."
                     // Create a new AVD, overwriting if it already exists.
                     // Using google_apis for access to Google Play Services, and x86_64 for better performance on CI servers.
-                    sh "echo no | avdmanager create avd --name '${AVD_NAME}' --package 'system-images;${PLATFORM_VERSION};google_apis;x86_64' --force"
+                    bat "echo no | avdmanager create avd --name \"${AVD_NAME}\" --package \"system-images;${PLATFORM_VERSION};google_apis;x86_64\" --force"
 
                     echo "Starting emulator..."
                     // Start the emulator in the background without a UI, audio, or boot animation for faster startup.
-                    sh "nohup emulator -avd ${AVD_NAME} -no-window -no-audio -no-boot-anim -port 5554 &"
+                    // Use 'start /B' for background execution on Windows.
+                    bat "start /B emulator -avd ${AVD_NAME} -no-window -no-audio -no-boot-anim -port 5554"
 
                     // Wait for the Android Debug Bridge (ADB) to see the device.
-                    sh "adb wait-for-device"
+                    bat "adb wait-for-device"
                     echo "Emulator is online. Waiting for boot process to complete..."
 
                     // Wait until the system boot has completed.
-                    sh "adb shell 'while [[ -z \$(getprop sys.boot_completed) ]]; do sleep 5; done'"
+                    bat "adb shell \"while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done\""
 
                     // Unlock the screen to ensure UI is accessible for tests.
-                    sh "adb shell input keyevent 82"
+                    bat "adb shell input keyevent 82"
                     
                     echo "Emulator is ready."
                 }
@@ -61,7 +61,7 @@ pipeline {
             steps {
                 // Execute instrumentation tests on the connected emulator.
                 // --no-daemon is recommended for CI environments.
-                sh "${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
+                bat "${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
             }
         }
     }
@@ -80,7 +80,8 @@ pipeline {
 
                 echo "Shutting down emulator..."
                 // Ensure the emulator is killed to free up resources on the agent.
-                sh "adb emu kill || true"
+                // Use '|| echo.' to prevent the build from failing if the emulator is already stopped.
+                bat "adb emu kill || echo."
             }
         }
         success {
