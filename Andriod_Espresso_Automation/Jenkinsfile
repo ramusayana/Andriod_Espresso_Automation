@@ -46,8 +46,15 @@ pipeline {
                     bat "adb wait-for-device"
                     echo "Emulator is online. Waiting for boot process to complete..."
 
-                    // Wait until the system boot has completed by checking the sys.boot_completed property.
-                    bat '''adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 5; done'''
+                    // Use a retry block to robustly wait for the emulator to fully boot.
+                    retry(count: 24, sleep: 5) { // Total wait time: 2 minutes
+                        script {
+                            def output = bat(script: 'adb shell getprop sys.boot_completed', returnStdout: true).trim()
+                            if (output != '1') {
+                                error "Emulator not booted yet. Current status: ${output}"
+                            }
+                        }
+                    }
 
                     // Unlock the screen to ensure UI is accessible for tests.
                     bat "adb shell input keyevent 82"
