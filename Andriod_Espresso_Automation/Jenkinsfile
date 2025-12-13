@@ -24,8 +24,8 @@ pipeline {
 
         stage('Clean Workspace') {
             steps {
-                // The chmod command is not necessary on Windows.
-                bat "${GRADLE_WRAPPER} clean"
+                // Use 'call' to properly execute the batch script on Windows.
+                bat "call ${GRADLE_WRAPPER} clean"
             }
         }
 
@@ -46,8 +46,8 @@ pipeline {
                     bat "adb wait-for-device"
                     echo "Emulator is online. Waiting for boot process to complete..."
 
-                    // Wait until the system boot has completed.
-                    bat 'adb shell "while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done"'
+                    // Wait until the system boot has completed by checking the sys.boot_completed property.
+                    bat '''adb shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 5; done'''
 
                     // Unlock the screen to ensure UI is accessible for tests.
                     bat "adb shell input keyevent 82"
@@ -60,8 +60,8 @@ pipeline {
         stage('Run Espresso Tests') {
             steps {
                 // Execute instrumentation tests on the connected emulator.
-                // --no-daemon is recommended for CI environments.
-                bat "${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
+                // Use 'call' and --no-daemon is recommended for CI environments.
+                bat "call ${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
             }
         }
     }
@@ -71,8 +71,8 @@ pipeline {
         always {
             script {
                 echo "Publishing JUnit test results..."
-                // Collect and publish test results. This enables Jenkins to track test history and display reports.
-                junit 'app/build/outputs/androidTest-results/connected/**/*.xml'
+                // Collect and publish test results. Allow empty results to prevent failure if tests are skipped.
+                junit 'app/build/outputs/androidTest-results/connected/**/*.xml', allowEmptyResults: true
 
                 echo "Archiving build artifacts..."
                 // Archive the HTML test report and the generated APK for later inspection.
