@@ -1,79 +1,87 @@
 // Jenkinsfile
 
 pipeline {
+    // 1. Agent: Defines where the build runs. 'agent any' should be a Jenkins agent with Android SDK installed.
     agent any
 
     environment {
+        // Assumes ANDROID_HOME is set in Jenkins global configuration.
+        // Update PATH to include Android SDK tools for easier access in shell commands.
         PATH = "${env.ANDROID_HOME}/cmdline-tools/latest/bin:${env.ANDROID_HOME}/emulator:${env.ANDROID_HOME}/platform-tools:${env.PATH}"
-        GRADLE_WRAPPER   = ".\\gradlew.bat"
-        AVD_NAME         = "ci_test_avd"
-        PLATFORM_VERSION = "android-30"
+
+        GRADLE_WRAPPER   = '.\\gradlew.bat'
+        AVD_NAME         = 'ci_test_avd'
+        PLATFORM_VERSION = 'android-30' // Target Android API Level for the emulator
     }
 
     stages {
-        stage("Checkout Code") {
+        stage('Checkout Code') {
             steps {
+                // Fetches the source code from the configured SCM (e.g., Git)
                 checkout scm
             }
         }
 
-        stage("Clean Workspace") {
+        stage('Clean Workspace') {
             steps {
-                bat "%GRADLE_WRAPPER% clean"
+                // The chmod command is not necessary on Windows.
+                bat "${GRADLE_WRAPPER} clean"
             }
         }
 
-        stage("Start Android Emulator") {
+        stage('Start Android Emulator') {
             steps {
                 script {
                     echo "Creating Android Virtual Device (AVD)..."
-
-                    bat """
-                    echo no | avdmanager create avd ^
-                      --name "%AVD_NAME%" ^
-                      --package "system-images;${PLATFORM_VERSION};google_apis;x86_64" ^
-                      --force
-                    """
+                    // Create a new AVD, overwriting if it already exists.
+                    // Using google_apis for access to Google Play Services, and x86_64 for better performance on CI servers.
+                    bat "echo no | avdmanager create avd --name \"${AVD_NAME}\" --package \"system-images;${PLATFORM_VERSION};google_apis;x86_64\" --force"
 
                     echo "Starting emulator..."
+                    // Start the emulator in the background without a UI, audio, or boot animation for faster startup.
+                    // Use 'start /B' for background execution on Windows.
+                    bat "start /B emulator -avd ${AVD_NAME} -no-window -no-audio -no-boot-anim -port 5554"
 
-                    bat """
-                    start /B emulator -avd %AVD_NAME% ^
-                      -no-window -no-audio -no-boot-anim -port 5554
-                    """
-
+                    // Wait for the Android Debug Bridge (ADB) to see the device.
                     bat "adb wait-for-device"
-
                     echo "Emulator is online. Waiting for boot process to complete..."
 
-                    rem Simple wait loop for Windows cmd
-                    bat "adb shell while [ -z \\\"\\$(getprop sys.boot_completed)\\\" ]; do sleep 5; done"
+                    // Wait until the system boot has completed.
+                    bat 'adb shell "while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done"'
 
+                    // Unlock the screen to ensure UI is accessible for tests.
                     bat "adb shell input keyevent 82"
-
+                    
                     echo "Emulator is ready."
                 }
             }
         }
 
-        stage("Run Espresso Tests") {
+        stage('Run Espresso Tests') {
             steps {
-                bat "%GRADLE_WRAPPER% connectedDebugAndroidTest --no-daemon"
+                // Execute instrumentation tests on the connected emulator.
+                // --no-daemon is recommended for CI environments.
+                bat "${GRADLE_WRAPPER} connectedDebugAndroidTest --no-daemon"
             }
         }
     }
 
+    // Post-build actions are executed after all stages have completed.
     post {
         always {
             script {
                 echo "Publishing JUnit test results..."
-                junit "app/build/outputs/androidTest-results/connected/**/*.xml"
+                // Collect and publish test results. This enables Jenkins to track test history and display reports.
+                junit 'app/build/outputs/androidTest-results/connected/**/*.xml'
 
                 echo "Archiving build artifacts..."
-                archiveArtifacts artifacts: "app/build/reports/androidTests/connected/index.html, app/build/outputs/apk/debug/*.apk", allowEmptyArchive: true
+                // Archive the HTML test report and the generated APK for later inspection.
+                archiveArtifacts artifacts: 'app/build/reports/androidTests/connected/index.html, app/build/outputs/apk/debug/*.apk', allowEmptyArchive: true
 
                 echo "Shutting down emulator..."
-                bat "adb emu kill || echo ."
+                // Ensure the emulator is killed to free up resources on the agent.
+                // Use '|| echo.' to prevent the build from failing if the emulator is already stopped.
+                bat "adb emu kill || echo."
             }
         }
         success {
