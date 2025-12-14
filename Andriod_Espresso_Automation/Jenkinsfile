@@ -9,7 +9,7 @@ pipeline {
         // Update PATH to include Android SDK tools for easier access in shell commands.
         PATH = "${env.ANDROID_HOME}/cmdline-tools/latest/bin:${env.ANDROID_HOME}/emulator:${env.ANDROID_HOME}/platform-tools:${env.PATH}"
 
-        GRADLE_WRAPPER   = '.\\gradlew.bat'
+        GRADLE_WRAPPER   = './gradlew.bat'
         AVD_NAME         = 'ci_test_avd'
         PLATFORM_VERSION = 'android-30' // Target Android API Level for the emulator
     }
@@ -55,6 +55,11 @@ pipeline {
                             }
                         }
                     }
+
+                    // Disable animations to improve test stability
+                    bat "adb shell settings put global window_animation_scale 0"
+                    bat "adb shell settings put global transition_animation_scale 0"
+                    bat "adb shell settings put global animator_duration_scale 0"
 
                     // Unlock the screen to ensure UI is accessible for tests.
                     bat "adb shell input keyevent 82"
